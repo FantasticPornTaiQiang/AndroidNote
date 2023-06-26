@@ -77,9 +77,9 @@ n= recv(socketfd);//等待接受服务器端 发过来的信息
 然后来看 **`epoll`** 提供的三个函数：
 
 ```cpp
-**int** **epoll_create**(**int** size);
-**int** **epoll_ctl**(**int** epfd, **int** op, **int** fd, **struct** **epoll_event** *****event);
-**int** **epoll_wait**(**int** epfd, **struct** **epoll_event** *****events, **int** maxevents, **int** timeout);
+int epoll_create(int size);
+int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
 ```
 
 - **`epoll_create()`** 用于创建一个 **`epoll`** 池
