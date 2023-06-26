@@ -60,23 +60,23 @@ public static Message obtain() {
 
 **Q2：Message有哪些属性，怎么理解？**
 
-- `*what*` Int 用于标识Message，每个Handler独立拥有命名空间，无须担心int值重复
+- *`what`* Int 用于标识Message，每个Handler独立拥有命名空间，无须担心int值重复
 - *`arg1、arg2`*  Int 少量数据
-- `*obj`*  Object 任意数据
-- `*replyTo*`  Messenger 用于IPC
-- `*flag*` Int 若消息被使用则设置为True。当消息被加入队列时，该标志被设置，并在消息被传递和回收后保持原样。仅当创建或获取新消息时，该标志才被清除，因为这是应用程序允许修改消息内容的唯一时间。尝试将已在使用的消息加入队列或回收会导致错误。
+- *`obj`*  Object 任意数据
+- *`replyTo`*  Messenger 用于IPC
+- *`flag`* Int 若消息被使用则设置为True。当消息被加入队列时，该标志被设置，并在消息被传递和回收后保持原样。仅当创建或获取新消息时，该标志才被清除，因为这是应用程序允许修改消息内容的唯一时间。尝试将已在使用的消息加入队列或回收会导致错误。
     - int作为标识：
-        - ***`FLAG =* 1** << x` 左移x位，定义不同的标识
-        - *`flags* |= ***FLAG`*** 标识位，置true
-        - *``flags &*= ~***FLAG`*** 标识位，置false
-        - `(*flags* & ***FLAG_IN_USE***) == ***FLAG_IN_USE`*** 判断标识位是否true
+        - *`FLAG = 1 << x`* 左移x位，定义不同的标识
+        - *`flags |= FLAG`* 标识位，置true
+        - *`flags &= ~FLAG`* 标识位，置false
+        - *`(flags & FLAG_IN_USE) == FLAG_IN_USE`* 判断标识位是否true
     - 这个方式在View体系中同样用到了
 - *`when`* Long 要被处理的时间，从系统启动时间开始算（deep sleep时不计时）
 - *`data`* Bundle 数据（大量）
 - *`target`* Handler 消息发给谁去被处理（同步屏障消息没有target）
 - *`callback`* Runnable 处理消息的回调，如果这个不为空则消息优先给这个回调处理。
     - 即，当target的Handler正在处理此消息时，如果callback没设置，这个消息将分派到接收Handler的Handler.handleMessage(Message)方法。
-- `next` Message 下一条消息（消息的链表结构靠的就是这个）
+- *`next`* Message 下一条消息（消息的链表结构靠的就是这个）
 
 Message类的static：
 
