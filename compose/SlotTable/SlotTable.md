@@ -939,7 +939,7 @@ Reader 去读 SlotTable 的方式也是类似 Writer 的，通过更改 currentG
 
 现在我们再来总结概括一下 SlotTable，首先，就如文章开头所说，SlotTable 就是 Compose 框架储存各类数据的地方。另外，SlotTable.kt 文件里，还有两个大类 SlotWriter 和 Reader，它们提供了对 SlotTable 的构造和访问能力。
 
-由于我并没有找到其它关于 SlotTable 的详细分析，因此，这篇文章，是我硬读这几千行代码，然后思考出来的（文中的那些各种各样的流程图，也是我自己画的，不是网图，如果看不清，这里有高清大图）——我想说的是，可能会有错误或者描述不清的地方，欢迎纠正和讨论。
+由于我并没有找到其它关于 SlotTable 的详细分析，因此，这篇文章，是我硬读这几千行代码，然后思考出来的（文中的那些各种各样的流程图，也是我自己画的，不是网图，如果看不清，这里有[高清大图](https://github.com/FantasticPornTaiQiang/AndroidNote/blob/main/compose/SlotTable/SlotTable.png)）——我想说的是，可能会有错误或者描述不清的地方，欢迎纠正和讨论。
 
 至于为什么会去读这个源码呢？纯粹是好奇和兴趣。它确实太底层了，以至于读完也对 Compose 的使用没啥帮助，但是，如果想继续探索 Compose 的原理，SlotTable 就是必须要搞清楚的一个东西。
 
