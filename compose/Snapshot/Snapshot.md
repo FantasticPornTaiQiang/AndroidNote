@@ -1,19 +1,22 @@
+---
+highlight: atom-one-light
+theme: arknights
+---
+
 ## 0 写在前面
 
 本篇是Compose探索系列的第二篇，继上一篇SlotTable（[传送](https://juejin.cn/post/7268297948639051831)）之后，我们来看看Snapshot。
 
-Snapshot的理解难度会比SlotTable少上不少，同时也很有趣~
+Snapshot的复杂程度会比SlotTable少上不少，同时也更有趣\~
 
 > `开始看之前，请确定你已经：`
-> 
-> - `熟练掌握kotlin的语法和Kotlin式的编程风格`
-> - `了解一些数据结构的基本知识`
-> - `能熟练使用Compose`
-> `当然，以上这些也可以在看文章的过程中边看边学习。`
-> 
+>
+> *   `熟练掌握kotlin的语法和Kotlin式的编程风格`
+> *   `了解一些数据结构的基本知识`
+> *   `能熟练使用Compose`
+>     `当然，以上这些也可以在看文章的过程中边看边学习。`
 
 > `如果文中的图看不清，文章最后有高清大图。 `
->
 
 ## 1 初识Snapshot
 
@@ -31,19 +34,21 @@ fun HelloWorld() {
 ```
 
 这段代码中，count就是一个状态，我们可以注意到，它的创建过程包含了两部分：
-1. 调用mutableStateOf()
-2. 调用remember{ }
+
+1.  调用mutableStateOf()
+2.  调用remember{ }
 
 第一步，调用mutableStateOf方法，这就产生了一个状态对象；而第二步，则是调用remember方法去记住它，即，把它存到SlotTable里。
 
 那么，我们这篇文章的主角，就是上面的第一步了。我们将深入探索Compose的状态管理系统——Snapshot系统。
 
 根据我们Compose探索系列开篇第0节提到的方法论（[传送](https://github.com/FantasticPornTaiQiang/AndroidNote/blob/main/compose/Learning%20Navigation/Learning%20Navigation.md)），接下来的内容分为这么几部分：
-1. 首先，我会直接介绍Snapshot系统的整体构成和工作原理。看完这一部分，相信你就能对Snapshot系统本身的运作一清二楚了。
-2. 接下来，我们深入源码，一起探索整个系统是如何具体实现的，这一部分主要的思路是：
-   1. 首先，把Snapshot系统中的各个子概念解释清楚。
-   2. 然后，逐步解读其运作流程，并作总结。
-3. 最后，简单介绍Snapshot与Compose的合作——更多的介绍会安排在Compose探索系列之后的文章中。
+
+1.  首先，我会直接介绍Snapshot系统的整体构成和工作原理。看完这一部分，相信你就能对Snapshot系统本身的运作一清二楚了。
+2.  接下来，我们深入源码，一起探索整个系统是如何具体实现的，这一部分主要的思路是：
+    1.  首先，把Snapshot系统中的各个子概念解释清楚。
+    2.  然后，逐步解读其运作流程，并作总结。
+3.  最后，简单介绍Snapshot与Compose的合作——更多的介绍会安排在Compose探索系列之后的文章中。
 
 ## 2 再识Snapshot
 
@@ -63,27 +68,25 @@ fun HelloWorld() {
 
 利用一个类似git的系统，我们可以实现：
 
-1. 多线程下的状态管理。
-   - 开发者在任意线程更新状态，框架自动对状态进行合并，并反映到UI上。
-   - 框架对状态合并时，也能够利用多线程并发进行，提高性能。
-2. 单线程下的状态管理。
-   - 就是说，即使整个团队就只有我一个人，我也可以用git，尽管它的优势不如多线程下明显就是了。
+1.  多线程下的状态管理。
+    *   开发者在任意线程更新状态，框架自动对状态进行合并，并反映到UI上。
+    *   框架对状态合并时，也能够利用多线程并发进行，提高性能。
+2.  单线程下的状态管理。
+    *   就是说，即使整个团队就只有我一个人，我也可以用git，尽管它的优势不如多线程下明显就是了。
 
 那么，接下来我们就决定用这么一个系统来实现Compose中的状态管理了，并且给它起名为Snapshot系统。
 
 下面，我们具体展开。
 
-### 2.1 一些概念
-
 这一节我们来看Snapshot系统的相关概念。
 
-#### 2.1.1 快照和状态
+### 2.1 快照和状态
 
 Snapshot系统中，我们把对状态的版本控制称为Snapshot，即快照。
 
 如下图所示，现在我们全局有3个状态，count、show和name，我们在时刻1拍摄一张快照，咔嚓，生成了快照1，那么，快照1就把时刻1的状态给记录下来了。
 
-![image.png](https://p1-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e2421668eba14876ac59bcd68444d084~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1014&h=590&s=49712&e=png&b=fefefe)
+![image.png](https://p1-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e2421668eba14876ac59bcd68444d084~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1014\&h=590\&s=49712\&e=png\&b=fefefe)
 
 现在，随着时间流逝，外界对状态进行了一些修改，我们来到了时刻2，在时刻2我们并不拍摄快照。接着，又过了一会，外界又对状态进行修改，我们来到了时刻3，在时刻3我们拍摄了第二张快照。
 
@@ -113,7 +116,7 @@ Snapshot系统中，我们把对状态的版本控制称为Snapshot，即快照�
 
 那么，按照我们的新实现方案，不同快照时刻的状态存储就变成了下图的样子。
 
-![image.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/40af4b3478404d3ab0a203258a78d458~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1600&h=906&s=128362&e=png&b=fefefe)
+![image.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/40af4b3478404d3ab0a203258a78d458~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1600\&h=906\&s=128362\&e=png\&b=fefefe)
 
 我们不再把不同快照时刻的状态存放在各个快照的内部，而是统一放在SlotTable里。我们把每一个状态称为**StateObject（状态对象）**。我们调用的mutableStateOf()其实就创建了一个StateObject。即使之后它的值变了，它还是那个StateObject。
 
@@ -133,18 +136,168 @@ Snapshot系统中，我们把对状态的版本控制称为Snapshot，即快照�
 
 好了，请确保搞懂上面的两点，我们接着往下走。
 
-#### 2.1.2 快照的功能
+> `注意：后面我们所说的状态，若无特殊说明则都是指StateObject.`
 
-在有了2.1.1节的认知铺垫之后，接下来，我们继续思考Snapshot系统的设计。
+### 2.2 快照的功能
 
-这一小节，我们来看看快照具体有哪些能做的事。
+在有了2.1.1节的认知铺垫之后，接下来，我们继续思考Snapshot系统的设计。这一节我们只讲概念，基本上不看代码（`除非某些概念难以解释时，会举代码的例子来辅助说明`）。
+
+> `注意：后文中由于我的疏忽，可写快照和可变快照这两个词存在混用现象，这里先说明，它俩是一个意思，不用管叫法的区别。`
+
+**1、多线程**
+
+之前提到快照系统需要能够处理多线程环境，那么，最好的方案是，利用ThreadLocal机制，保证每个线程只能同时存在一个Snapshot，这样就不会导致状态过于混乱。
+
+**2、拍摄快照和进入快照**
+
+接下来考虑一个线程内，一个快照的基本行为。
+
+1.  拍摄快照（`take(Nested)Snapshot`）- 拍摄一张快照，记住当前时刻的所有状态，这之后，快照里的所有状态的值都停留在这一刻。这个操作可以相当于git操作里的从当前分支创建一个新分支。
+
+2.  进入快照（`enter`） - 拍摄后，我们有两种选择：
+    1.  不进入新的快照，那么我们就留在主线。
+    2.  也可以选择进入快照，进入快照后，访问到的就是之前快照记录的状态值。
+
+
+**3、可变快照和只读快照**
+
+这个概念是为了简化和区分快照的行为。现在，我们拍摄快照并进入。
+
+如果进入快照后，只想访问状态，而不再去修改状态，则拍摄只读快照就够了。在只读快照中尝试修改状态值，则会报错。
+
+相对地，如果你想在快照之中修改状态值，那就得拍摄可变快照。
+
+可变快照（`MutableSnapshot`）和只读快照（`ReadonlySnapshot`）都是Snapshot的两个实现类。
+
+**4、嵌套快照**
+
+当我们已经进入了一个快照，还想拍摄一个快照时，那么就可以拍摄嵌套快照。
+
+已经处于只读快照内则只能拍摄只读的嵌套快照（`takeNestedSnapshot`），而已经处于可写快照内则可以拍摄可变和只读的嵌套快照（`takeNestedMutableSnapshot`）。
+
+即使是嵌套快照，进入它内部后，状态也是独立隔离的。例如嵌套的可变快照中如果修改了状态值，则仅会对这一个快照可见，如果想要将更改暴露出去，那么就需要使用下面第5点的提交操作。
+
+此外，你可能会产生一个小疑惑，就是只读的嵌套快照有什么用？反正状态不能再改变了。嵌套的只读快照，我能想到的唯一一个应用场景就是我们可以用来设置不同的监听。对于只读快照A，我们设置了状态读取的监听a，如果此时又想设置不同的监听b，那么就可以在快照A中再拍摄一个只读快照B。
+
+
+**5、可变快照提交更改**
+
+如果我们拍摄了可变快照并进入，然后在里面修改了状态值，这时，我们的更改仅仅只是在这个快照内部生效，但是对于它的父快照和子嵌套快照来说，更改都是不可见的。
+
+如果我们想要更改生效，就需要`apply`一下，提交我们的更改。提交后，在这个快照中修改的状态就会提交并合并到父级快照。
+
+需要注意的有两点：
+
+1.  快照提交更改是一次性的、终止性的操作。
+    这意味着，快照提交后就处于一种结束的状态，不能再次提交，也不能再创建新的嵌套快照了。
+
+    > `但是注意：提交操作合并了状态，但状态是个对象，是引用类型。因此，当进入了一个快照并且仍未离开时，提交只是代表这个快照内的状态将对其他快照可见，但仍可以修改状态。再说白些，看下面的例子。`
+    >
+    > ```kotlin
+    > state.value = 2
+    > val snapshot = Snapshot.takeMutableSnapshot()
+    > snapshot.enter {
+    >     //进入快照
+    >     state.value = 3
+    >     snapshot.apply()
+    >     state.value = 5
+    >     //离开快照
+    > }
+    > Log.d(TAG, "test3: ${state.value}") //输出5
+    > ```
+
+2.  快照的提交是向上的、向父级的。如果当前快照A有子快照B，B有子快照C，现在B和C中都有状态改动，B先提交，修改同步到A，但是C未提交，C中的修改此时仍不可见。同时，这也意味着C中的修改永远不能生效了，因为父快照已经apply了，父快照已经处于它的非活动阶段了，C再apply也不会有用的。
+
+**6、合并冲突**
+
+当我们apply时，把当前修改向父级提交，但是如果父级中也发生了修改，就可能导致冲突（`就像git中那样`），具体的合并策略和合并过程我们不在这里探究，因为这一块还比较复杂，我们留到下一大节的源码部分去细究。
+
+**7、销毁快照**
+
+如果快照不再被需要了，一定要去销毁它（`dispose`）。你想，我们要用StateRecord记录StateObject的不同快照时刻的值，如果不去销毁，那这些值将永远存在内存中，这会造成严重的内存泄漏，且非常难以排查出来。
+
+对于一个只读快照，我们不再需要的时候，要调用dispose，而对于可写快照，则有两种选择，可以apply也可以dispose。对可写快照来说，apply和dispose都预示着这个快照的生命周期到了最终阶段，不过硬要说的话，dispose更后一些，调用apply后还可以调用dispose，反过来则报错。
+
+此外，对于嵌套快照，如果父快照dispose了，子快照将仍处于活动状态（`什么是活动状态就在下一点`），它也可以apply，只是，尽管不会报错，但没有作用。子快照中的状态仍然是可读的，也因此，子快照不再需要时也别忘了对它dispose。
+
+**8、快照的生命周期**
+
+这第8点其实相当于对前面做的一个小结，我们简单梳理一下快照的生命周期。
+
+按照流程，完整的生命周期大致如下图所示。
+
+<p align=center><img width="70%" src="https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e4b836ebcf9c4185b01c0cd052b8ebf9~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=891&h=464&s=39744&e=png&b=ffffff"></p>
+
+其中：
+
+1.  活动期是指快照从被创建到被销毁之间的时期。
+2.  上图只是展示了一个尽量完整的生命周期，但不一定所有操作都会进行，例如可能不进入而直接销毁。
+3.  在可变快照中，可以先提交再销毁，也可以只提交，也可以只销毁，但不可以先销毁再提交。
+4.  退出操作用了虚线图标，因为实际上我们一般使用时只调用enter函数就行了，enter函数调用完毕自然就相当于离开了。
+
+我们再加上嵌套快照的概念，把之前提到的一些操作总结一下，下图给出了一个示例。
+
+![image.png](https://p1-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/6c81d73f9dee4fa5ae66a95f22183208~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1662&h=394&s=67322&e=png&b=ffffff)
+
+**9、全局快照**
+
+尽管上一点中我们作了阶段性小结，但我们的新概念还没有结束，下一个概念是全局快照。
+
+既然我们的快照都是嵌套的，那总有第一个快照吧，这个快照的父快照又是什么呢？其实我们有一个全局快照的概念，它可以理解为所有快照的最终根快照。
+
+例如，如果当处于非嵌套的可变快照中修改状态并提交，它已经是非嵌套的快照了，没有父级快照了，那么更改将会被反映到全局快照中。
+
+全局快照也是可变快照的一种。这也就和之前第4点中说的，只读快照内部只能拍摄嵌套的只读快照，而可变快照内部能拍摄嵌套的可变和只读快照。当我们在最开始，还没有手动创建快照时，其实，此时我们就处于全局快照中，而又由于全局快照是可变快照，所以当然可以直接拍摄可变或只读快照。
+
+> 另外，多提一嘴。全局快照和第1点中以ThreadLocal存放的多线程的快照集合的关系：
+> 
+> 全局快照只是为了表示非嵌套快照的根这一概念而存在的。当我们退出非嵌套的可变快照时，自然就回到了全局快照。在第1点中我们提到过，一个线程只能有一个当前的活动快照，那么此时，当前的活动快照，即SnapshotThreadLocal.get()获取到的，就是全局快照。这就是全局快照和SnapshotThreadLocal的关系。
+
+**10、事件的通知、监听和回调**
+
+快照系统的最后一个概念就是事件相关的了。在快照系统中，对事件的监听以及事件触发的回调主要分为这么几类：
+
+1. 快照内部，对状态读和写的监听：
+
+    - 读监听（`readObserver`）：如果目前正处于当前快照或当前快照的嵌套快照中，且发生了对StateObject的值的读取操作，则触发这个回调。一般情况下，我们在拍摄快照时就传入这个回调。
+
+    - 写监听（`writeObserver`）：如果目前正处于可变或嵌套的可变快照中，且发生了StateObject的创建，或者在首次对StateObject写入之前，则会触发这个回调。若是创建了多个嵌套快照，则可能对同一个StateObject多次触发这个回调。一般情况下，我们在拍摄快照时就传入这个回调。
+    
+2. 全局快照，对状态写入的监听（`registerGlobalWriteObserver`）：自最后一次调用sendApplyNotifications以来，第一次对全局快照下的StateObject写入时，触发此监听。这个监听应仅用于用来判断是否要调用sendApplyNotifications，如果监听到有状态写入，且apply了，则就要手动调用sendApplyNotifications。（`这段话的具体含义和场景我们在下面sendApplyNotifications的地方解释`）
+
+3. 可写快照提交到全局时的回调（`registerApplyObserver`）：当可写快照的状态提交合并到全局时，触发此回调。
+
+4. 当前线程注册状态对象的读写回调（`observe`）：它只会对当前和以后创建的此线程的快照触发读写回调，而此前的快照中的状态读写不会触发此回调。
+
+除此以外，我们还可以主动给Snapshot系统发送通知：
+
+1. 发送状态对象初始化通知（`notifyObjectsInitialized`）：通知快照，在此之前创建的状态对象被视为已经初始化。（`这个操作有什么使用场景，我们暂且不管。`）
+
+2. 发送全局状态的提交通知（`sendApplyNotifications`）：在快照之外，有状态更改影响到全局快照时，需要调用这个方法给Snapshot系统发送通知。对于非嵌套的可变快照，它提交更改就会提交到全局快照，这会导致隐式调用到这个函数。（`这个操作有什么使用场景，我们也暂且不管。`）
+
+**11、快照系统的整体结构**
+
+好的，我们终于把快照系统的几乎所有概念给梳理完了。那么，这一小点也是总结性质的，我们来看看快照系统的整体结构。
+
+
+![image.png](https://p9-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/4364306a1d7e4c65aa9c12bbf37eddcc~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1428&h=576&s=58434&e=png&b=fefefe)
+
+### 2.3 目前可以获得的情报
+
+小结一下，这一节我们几乎没有看代码，单纯对快照系统的设计和功能进行了详尽的分析。下一节我们将会深入源码，而如果你理解了这一节的所有概念，理解源码就会轻松不少。
+
+此外，这一节中还有少量的使用场景和存在意义相关的内容，我们说往后稍稍、暂且不论的，我们将在第4节中再次提及它们，因为这一节如果展开介绍就太长太长了，它们的使用场景和存在意义我们将从Compose框架中窥见一番。
 
 
 ## 3 深入源码
 
+这一节我们带着之前理解的概念，深入源码继续探索。
+
 ### 3.1 数据结构
 
-Snapshot系统里有两种自己实现的数据结构，它们是针对Snapshot系统中的某些特定的使用场景进行的优化。我们先来看看这两个数据结构。
+在看Snapshot系统如何运作的源码之前，我们先打个岔。Snapshot系统中，有两个自实现的数据结构，它们是针对Snapshot系统中的某些特定的使用场景进行的优化。我们先来看看这两个数据结构。
+
+> `如果你不想对它们有详细的了解，那么看完3.1.1和3.1.2节的前面几行介绍，知道它们是干嘛用的，就可以直接跳到3.2节了。`
 
 #### 3.1.1 SnapshotIdSet
 
@@ -160,7 +313,7 @@ SnapshotIdSet是一个Set，这个Set专门用于记录“位”。它记录了�
 
 什么意思呢？看图。
 
-![SnapshotIdSet.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/862e85b57810444fa53fec44295a3a39~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1399&h=289&s=28059&e=png&b=ffffff)
+![SnapshotIdSet.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/862e85b57810444fa53fec44295a3a39~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1399\&h=289\&s=28059\&e=png\&b=ffffff)
 这个Set的构造函数传入了四个参数：
 
 *   `val upperSet: Long`：从lowerBound位开始，往后的 \[64,127] 位的值。
@@ -175,28 +328,31 @@ SnapshotIdSet是一个Set，这个Set专门用于记录“位”。它记录了�
 而除此以外，对于低于lowerBound的位置，这个数据结构也提供了访问，只不过是以稀疏的方式，也就是构造函数中的belowBound数组。
 
 > **稀疏访问**
-> 
+>
 > 当一个数据结构中，有大量的0值存在时，我们可以以稀疏的方式记录这个数据结构，以节省访问的时间和空间。例如，对于下面这个二维数组，当我们知道它很可能有大量0值时，我们记录它就不用全部记录了，而是只记录存在的值。
+>
 > ```稀疏访问演示
 >      array     row col value  size 4,4
 >     0 0 0 0     1   0    1
 >     1 0 0 0     2   2    4
 >     0 0 4 0     3   2    3
 >     0 0 3 0    
-> 
+>
 >     //这样我们只需要记右边的row、col、对应的value、整个数组的size，
 >     //就能表征这个二维数组，当数组越大、空位越多时，效果越好。
 > ```
+>
 > 简而言之，稀疏的思想就是，当要记录的数据不多、且很稀疏时，就只记存在的值。
-> 
+>
 > 那么，回到我们这个Set结构里，低于lowerBound的位是很稀疏的，那么就采用这种稀疏的方式记录，而不是像高于lowerBound的连续的0\~127位一样，直接以两个Long连续地记录。
 
 **get(bit: Int): Boolean**
 
 访问SnapshotIdSet的第bit位（`为1则返回true`），当：
-1. bit在lowerBound往后[0,127]位范围内，则直接取upperSet或者lowerSet这两个Long中的对应位即可。
-2. bit在lowerBound往后127位以上，则相当于访问越界，直接返回false。
-3. bit在lowerBound以下，则去belowBound中查找是否存了这个bit位，如果存了，则返回true。
+
+1.  bit在lowerBound往后\[0,127]位范围内，则直接取upperSet或者lowerSet这两个Long中的对应位即可。
+2.  bit在lowerBound往后127位以上，则相当于访问越界，直接返回false。
+3.  bit在lowerBound以下，则去belowBound中查找是否存了这个bit位，如果存了，则返回true。
 
 对于lowerBound及以上的范围，get的复杂度都是O(1)。
 
@@ -207,10 +363,11 @@ SnapshotIdSet是一个Set，这个Set专门用于记录“位”。它记录了�
 这个数据结构是标记为@Imuutable的，它的构造函数的四个参数也都是val，所以这个类是不可变的。也就是说，当发生set或clear等改变它的操作时，它会创建一个新的SnapshotIdSet。
 
 这个clear函数用于把SnapshotIdSet的某一位清空，置为0，当：
-1. bit在lowerBound往后[0,127]位范围内，则直接把upperSet或者lowerSet这两个Long中的对应位清0即可，返回的是新的SnapshotIdSet。
-2. bit在lowerBound往后127位以上，此时，127位以上本来就被认为是0，清零自然意味着不用进行任何操作，直接返回this。
-3. bit在lowerBound以下，则去belowBound中查找是否存了这个bit位，如果存了，则构造一个新的SnapshotIdSet，新的Set的belowBound数组不包含这个位，而如果没存，同样可以理解为这一位本来就是0，那么直接返回this。
-4. 此外，在上面的3种情况中，若第bit位本来就是0，或意味着bit位为0的情况，则不按上面说的操作，而是直接返回this。
+
+1.  bit在lowerBound往后\[0,127]位范围内，则直接把upperSet或者lowerSet这两个Long中的对应位清0即可，返回的是新的SnapshotIdSet。
+2.  bit在lowerBound往后127位以上，此时，127位以上本来就被认为是0，清零自然意味着不用进行任何操作，直接返回this。
+3.  bit在lowerBound以下，则去belowBound中查找是否存了这个bit位，如果存了，则构造一个新的SnapshotIdSet，新的Set的belowBound数组不包含这个位，而如果没存，同样可以理解为这一位本来就是0，那么直接返回this。
+4.  此外，在上面的3种情况中，若第bit位本来就是0，或意味着bit位为0的情况，则不按上面说的操作，而是直接返回this。
 
 那么，对于lowerBound往后位的clear操作，它的复杂度是O(1)。而对于belowBound，clear操作的代价至少是O(logN)，因为会先发生一次二分查找，而如果查找命中，则还要删除这个bit位（`构造新的belowBound数组`），则此时复杂度是O(N)。此外，clear操作对于已经为0的位，复杂度也是O(1)。
 
@@ -221,25 +378,27 @@ set操作与clear操作相反，是把第bit位设置为1。
 与clear相同的是，由于SnapshotIdSet的不可变性，当set引起改变时，也会新构造一个SnapshotIdSet对象。
 
 当：
-1. bit在lowerBound往后[0,127]位范围内，与clear类似。
-2. bit在lowerBound以下，与clear类似，若第bit位不在belowBound中，就认为第bit位为0，则构造新belowBound数组和新的SnapshotIdSet对象。
-3. 在上面的情况中，若bit位本就是1，或者被认为为1，则直接返回this。
+
+1.  bit在lowerBound往后\[0,127]位范围内，与clear类似。
+2.  bit在lowerBound以下，与clear类似，若第bit位不在belowBound中，就认为第bit位为0，则构造新belowBound数组和新的SnapshotIdSet对象。
+3.  在上面的情况中，若bit位本就是1，或者被认为为1，则直接返回this。
 
 而与clear不同的是，当bit位高于127位时，此时会导致lowerBound右移，出现新的lowerBound，且以此新的lowerBound构造新的SnapshotIdSet，而此时：
-- 若原来的lowerSet不全为0，则原来的lowerSet中为1的位以及原来的belowBound，都会被添加到新的SnapshotIdSet的belowBound里。此外，原来的upperSet中为1的位也会被加入新的belowBound。
-- 否则，原来的belowBound被舍弃，只有原来的upperSet中为1的位被加入新的belowBound。
 
-因此，set操作的复杂度，对于bit位已经为1的位，复杂度是O(1)；对于lowerBound往后[0,127]位的set操作，复杂度为O(1)；对于belowBound，复杂度至少为O(logN)，与clear操作类似；对于lowerBound往后127位以上，则开销会稍大。
+*   若原来的lowerSet不全为0，则原来的lowerSet中为1的位以及原来的belowBound，都会被添加到新的SnapshotIdSet的belowBound里。此外，原来的upperSet中为1的位也会被加入新的belowBound。
+*   否则，原来的belowBound被舍弃，只有原来的upperSet中为1的位被加入新的belowBound。
+
+因此，set操作的复杂度，对于bit位已经为1的位，复杂度是O(1)；对于lowerBound往后\[0,127]位的set操作，复杂度为O(1)；对于belowBound，复杂度至少为O(logN)，与clear操作类似；对于lowerBound往后127位以上，则开销会稍大。
 
 **其他方法**
 
-此外，这个SnapshotIdSet还提供了其它的方法，例如两个SnapshotIdSet集合之间进行位的&、&~、|等运算。这些都是基于上面的三个方法实现的。
+此外，这个SnapshotIdSet还提供了其它的方法，例如两个SnapshotIdSet集合之间进行位的&、&\~、|等运算。这些都是基于上面的三个方法实现的。
 
 此外，代码中还有一个函数，叫lowestBitsOf(bits: Long)，目的是寻找bits中为1的最低位的位置。它的实现也很巧妙，用了二分查找的思想，感兴趣可以自己找源码去看看。
 
 最后，我们再补充一点，这个SnapshotIdSet并没有实现equals方法，也就是无法比较两个SnapshotIdSet是否相同。这是故意不去实现的，因为实现的难度和代码的运行时间代价都很大，而且这个SnapshotIdSet是专用于Snapshot系统的，对于Snapshot系统来说，equals的比较是多余的、不被需要的。
 
-好了，SnapshotIdSet这个结构就说到这里。我们现在可以总结一下了，它就是用于记录多个Snapshot的id的，这个结构对于从lowerBound往后0~127个位置的get、set和clear都有着O(1)的访问时间复杂度，因此非常适合用于记录全局连续递增的Snapshot的id值。
+好了，SnapshotIdSet这个结构就说到这里。我们现在可以总结一下了，它就是用于记录多个Snapshot的id的，这个结构对于从lowerBound往后0\~127个位置的get、set和clear都有着O(1)的访问时间复杂度，因此非常适合用于记录全局连续递增的Snapshot的id值。
 
 #### 3.1.2 SnapshotDoubleIndexHeap
 
@@ -262,3 +421,5 @@ set操作与clear操作相反，是把第bit位设置为1。
 总之这个类，或者说这个算法，就是一个堆排序的思想，最终实现了O(1)复杂度的最小int值访问。
 
 接下来我们回到主线，继续分析Snapshot系统。
+
+### 3.2 快照的id和状态的可见性

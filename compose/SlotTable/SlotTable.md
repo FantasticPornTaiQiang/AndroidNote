@@ -1,7 +1,4 @@
----
-theme: arknights
-highlight: atom-one-light
----
+
 
 ## 写在开头
 
@@ -15,11 +12,10 @@ highlight: atom-one-light
 > - `了解一些数据结构的基本知识`
 > - `能熟练使用Compose`
 >
-> `当然，以上这些也可以在看文章的过程中边看边学习`
+> `当然，以上这些也可以在看文章的过程中边看边学习。`
 
-> `如果文中的图看不清，文章最后有高清大图。`
->
-> - [高清大图传送](#4-anchor1)
+> `如果文中的图看不清，文章最后有高清大图。` [传送](#4-anchor1)
+
 
 ## 0 初识 SlotTable
 
@@ -118,7 +114,7 @@ printSlotTable 是我自己写的一个扩展函数，就是利用反射把 Slot
   - dataAnchor - 关于 group 内的实际数据存放的位置信息？（`也就是说，groups应该只是存放group本身信息的数组，而实际存放group里面的数据——也就是slots的地方应该在另一处，所以后续需要访问某个group的具体数据时，应该是先在groups数组里查到dataAnchor的信息，再根据这个dataAnchor索引去另一处访问具体数据`）
 
 由于全是 int 存储，我们访问 group 的内容是非常不便的，从注释可以知道，已经写好了一堆扩展函数来方便地访问 group 的字段，我们随便找几个例子看看。
-<span id="1-2-1-1-anchor1"/>
+<span data-id="1-2-1-1-anchor1"/>
 
 ```kotlin
 //根据address获取groupInfo
@@ -165,7 +161,7 @@ Index 和 Address 看起来比较好理解，从英文意思来看，都是索�
 
 由于 group 在 groups 数组中的插入移动删除等操作，可能会导致 groups 数组中 group 与 group 之间产生间隙，这个间隙就是 gap，它本质上是一段连续的数组区间，存放的值全是 null。
 
-<span id="1-2-1-2-anchor1"></span>
+<span data-id="1-2-1-2-anchor1"></span>
 
 那么，这四个角色的关系是什么呢？通过阅读源码，我总结出了下面这张图。这张图非常重要，它是后面正确理解代码的基础。
 
@@ -192,7 +188,7 @@ Index 和 Address 看起来比较好理解，从英文意思来看，都是索�
 
 在你确定已经完全理解上图后，我们往下走。
 
-从上图可以看出，Index 序列在设计上是不包括 gap 的，而 Address 序列 的相关计算是不用管 gap 的。后半句话的意思是，在通过 address 获取 groups 数组中的 group 时，直接用 address \* Group_Fields_Size 即可，而不需要再进行 gap 相关的计算。原因就是 Address 这个概念已经把 gap 考虑在内了，Address 序列对应的就是真实存在的 groups 数组，因此通过 Address 从 groups 中取数据时，不用再考虑 gap 的计算问题。
+从上图可以看出，Index序列在设计上是不包括gap的，而Address序列 的相关计算是不用管 gap 的。后半句话的意思是，在通过 address 获取 groups 数组中的 group 时，直接用 address \* Group_Fields_Size 即可，而不需要再进行 gap 相关的计算。原因就是 Address 这个概念已经把 gap 考虑在内了，Address 序列对应的就是真实存在的 groups 数组，因此通过Address从groups中取数据时，不用再考虑gap的计算问题。
 
 上图的最后列出了三个计算公式。分别是 Index 与 Address 的互转、根据 Index 插 Anchor、取 Anchor 对应的 Index。
 
@@ -202,9 +198,9 @@ Index 和 Address 看起来比较好理解，从英文意思来看，都是索�
 
 好，在 1.2.1.1 节的 Group 字段讲解和 1.2.1.2 节的寻址讲解之后，我们终于可以看懂 1.2.1.1 节的那段访问 Group 字段的代码了。[传送](#1-2-1-1-anchor1)
 
-第一个函数就是，通过 address 去 groups 数组中获取 groupInfo，对于 address 的计算，我们不考虑 gap，直接乘以 Group_Fields_Size，也就是 5，然后再加上 groupInfo 对应的 offset，也就是 1，即可取到对应的 groupInfo 了。
+第一个函数就是，通过 address 去groups数组中获取 groupInfo，对于 address 的计算，我们不考虑 gap，直接乘以 Group_Fields_Size，也就是 5，然后再加上 groupInfo 对应的 offset，也就是 1，即可取到对应的 groupInfo 了。
 
-第二个函数就是，通过 address 去 groups 数组中判断这个 group 是否有 aux 信息，那么取到对应 groupInfo 的 int 值之后，和第 28 位做与运算，校验是否为 1 即可。
+第二个函数就是，通过 address 去groups数组中判断这个 group 是否有 aux 信息，那么取到对应 groupInfo 的 int 值之后，和第 28 位做与运算，校验是否为 1 即可。
 
 那么这里仅仅举了两个函数的例子，对其他 group 相关的扩展函数也都类似地看看，我们就能一步步推知关于 group 结构的更多信息。
 
@@ -259,7 +255,7 @@ countOneBits 函数返回了 0-7 的二进制表示中，“1”位的个数，�
   - `Group`是一个树状结构，可以包含子`Group`。
   - 由于在 slots 数组中，数据是连续存放的，因此，`Group`中的信息可以用来描述如何来解释 slots。换言之，我们可以通过 Group 中记录的索引信息，去 slots 中找这个 group 对应的具体数据——在 1.2.1.3 节我们已经亲自分析了这些函数。
   - `Group`有一个 int 类型的 key，还有可选的`Node`、`ObjectKey`、`Aux`，然后还有 0 个或多个 data slot。
-    <span id="1-2-1-4-anchor1"></span>
+    <span data-id="1-2-1-4-anchor1"></span>
   - `Group`实际上是一个树结构，它的子`Group`在 groups 数组中的存放位置就位于它自己后面。
   - 这种数据结构有利于对子`Group`进行线性扫描。
   - 除非通过`Group`相关的`Anchor`，否则随机访问是昂贵的。
@@ -279,7 +275,7 @@ countOneBits 函数返回了 0-7 的二进制表示中，“1”位的个数，�
 - `Slot`
   - slots 数组中的最小单位，一个就是 slots 数组的一个元素。之前提到的`Node`、`ObjectKey`、`Aux`等辅助数据和`Group`的 data slot 等正式数据，都存在`Slot`里——前三者各占一个 Slot（如果存在的话），后者占 0 个或多个`Slot`。
 
-<span id="1-2-1-4-anchor2"></span>
+<span data-id="1-2-1-4-anchor2"></span>
 
 OK，终于结束了，上面就是 SlotTable 中的绝大部分概念了，我画了一张图，总结一下。
 
@@ -587,7 +583,7 @@ groups 数组与 slots 数组一样，也有一段 gap，自然也有 moveGap �
 3.  gap 移动可能导致 parent anchors 也需要更新，因此，最后更新受影响的 parent anchors。
 4.  最后更新标记，groupGapStart 更新为 index。
 
-<span id="2-2-2-2"></span>
+<span data-id="2-2-2-2"></span>
 
 ##### 2.2.2.2 insertGroups
 
@@ -612,7 +608,7 @@ group 的 remove 操作与 slot 的也是类似的。这里先把 gap 直接移�
 
 最后，如果 parent 含有 groupMark 的话，还要更新 parent 的 mark，但是我们目前还没介绍 mark 是啥，所以先不管它。
 
-乍一看 remove 的我们分析到这里也就结束了，但是，这里有一个问题。我们把若干 group 移除了，但是好像没同步移除它们对应的 slots 呀——其实是有的，只不过移除 slots 的代码是在 removeGroup 函数内，不是在这儿。
+乍一看 remove 的我们分析到这里也就结束了，但是，这里有一个问题。我们把若干 group 移除了，但是好像没同步移除它们对应的 slots 呀——其实是有的，只不过移除 slots 的代码是在removeGroup函数内，不是在这儿。
 
 ### 2.3 核心方法
 
@@ -656,7 +652,7 @@ group 的 remove 操作与 slot 的也是类似的。这里先把 gap 直接移�
 
 回到正题，我们继续往下跟。我们刚刚看到 Composer 中各种 startXXGroup，不论是谁，它们最终都调用了一个方法——start，那么，这个 start 就是重中之重了，我们来看一看。
 
-    start(key: Int, objectKey: Any?, kind: GroupKind, data: Any?)
+`start(key: Int, objectKey: Any?, kind: GroupKind, data: Any?)`
 
 不同的 startXXGroup 方法，对 start 传入了不同的参数，这些参数我们都不陌生了——key、objectKey、kind、data。
 
@@ -710,7 +706,7 @@ startGroup 中，根据是否处于 inserting 分为两种情况。
 
 ![image.png](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/1af09dcf59044945bf073f64cbadb5f9~tplv-k3u1fbpfcp-watermark.image?)
 
-图中，黄色代表 currentGroup，蓝色代表 parent，而 currentGroup 在 inserting 时代表即将新增的节点，因此以虚线表示。在底下，我画出了每次操作后 groups 的 Index 序列存储的情况。可以看出，这样方式的构建，也恰好符合我们在 1.2.1.4 节中提到的，子 Group 在存储上就排在它自己后面。[传送](#1-2-1-4-anchor1)
+图中，黄色代表 currentGroup，蓝色代表 parent，而 currentGroup 在 inserting 时代表即将新增的节点，因此以虚线表示。在底下，我画出了每次操作后 groups 的 Index 序列存储的情况。可以看出，这样方式的构建，也恰好符合我们在1.2.1.4 节中提到的，子 Group 在存储上就排在它自己后面。[传送](#1-2-1-4-anchor1)
 
 可以大概猜出，Composer 会去按想要构造的结构，在 inserting 状态下，以特定的顺序去调用 startGroup 和 endGroup 方法，可以说，start/endGroup 的调用顺序和次数决定了一棵树最初的样子。比如，inserting 时连续调用 startGroup 将导致树将按深度优先的方式生长。
 
@@ -930,7 +926,7 @@ Reader 去读 SlotTable 的方式也是类似 Writer 的，通过更改 currentG
 >
 > `所以这个图就是简单解释了一下各个函数，但是至于实际上它们是怎么协作的，暂时无从知晓。`
 
-<span id="4"/>
+<span data-id="4"/>
 
 ## 4 小结
 
@@ -938,11 +934,11 @@ Reader 去读 SlotTable 的方式也是类似 Writer 的，通过更改 currentG
 
 剩下的，除了我们之前提到的暂时不讨论的一些疑问，就只有边角料了——一些无关紧要的辅助函数、以及一些自己能够轻松看懂的辅助代码。
 
-<span id="4-anchor1"/>
+<span data-id="4-anchor1"/>
 
 现在我们再来总结概括一下 SlotTable，首先，就如文章开头所说，SlotTable 就是 Compose 框架储存各类数据的地方。另外，SlotTable.kt 文件里，还有两个大类 SlotWriter 和 Reader，它们提供了对 SlotTable 的构造和访问能力。
 
-由于我并没有找到其它关于 SlotTable 的详细分析，因此，这篇文章是我硬读这几千行代码，然后思考总结写出来的（文中的那些各种各样的流程图，也是我自己画的，不是网图，如果看不清，[点击这里看高清大图](https://github.com/FantasticPornTaiQiang/AndroidNote/blob/main/compose/SlotTable/SlotTable.png)）——我想说的是，可能会有错误或者描述不清的地方，欢迎纠正和讨论。
+由于我并没有找到其它关于 SlotTable 的详细分析（`但还是推荐看一下fun佬的这篇文章，帮助很大。`[传送门](https://juejin.cn/post/7113736450968911908)），因此，这篇文章是我硬读这几千行代码，然后思考总结写出来的（文中的那些各种各样的流程图，也是我自己画的，不是网图，如果看不清，[点击这里看高清大图](https://github.com/FantasticPornTaiQiang/AndroidNote/blob/main/compose/SlotTable/SlotTable.png)）——我想说的是，可能会有错误或者描述不清的地方，欢迎纠正和讨论。
 
 至于为什么会去读这个源码呢？纯粹是好奇和兴趣。它确实太底层了，以至于读完也对 Compose 的使用没啥帮助，但是，如果想继续探索 Compose 的原理，SlotTable 就是必须要搞清楚的一个东西。
 
