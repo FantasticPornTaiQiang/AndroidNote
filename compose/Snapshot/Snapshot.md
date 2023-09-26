@@ -7,14 +7,15 @@ theme: arknights
 
 本篇是Compose探索系列的第二篇，继上一篇SlotTable（[传送](https://juejin.cn/post/7268297948639051831)）之后，我们来看看Snapshot。
 
-Snapshot的复杂程度会比SlotTable少上不少，同时也更有趣\~
+Snapshot的复杂程度会比SlotTable少上不少，但同时也更有趣！整个Snapshot系统设计最精彩的地方个人感觉是3.3节——状态的写入。其中的有关并发的设计部分、以及Record的复用机制，在我读懂代码理解过后，都感叹这样的设计实在是巧妙。推荐看看那部分！`虽然可能对日常开发没啥直接帮助，但真的可以学习思路、拓展思维！`
 
 > `开始看之前，请确定你已经：`
 >
 > *   `熟练掌握kotlin的语法和Kotlin式的编程风格`
 > *   `了解一些数据结构的基本知识`
 > *   `能熟练使用Compose`
->     `当然，以上这些也可以在看文章的过程中边看边学习。`
+> 
+> `当然，以上这些也可以在看文章的过程中边看边学习。`
 
 > `如果文中的图看不清，文章最后有高清大图。 `
 
@@ -130,7 +131,7 @@ Snapshot系统中，我们把对状态的版本控制称为Snapshot，即快照�
 
 **1. Snapshot对象本身并不存放任何状态，而只是进行版本控制，它就代表了一个版本号的概念。**
 
-**2. 而状态本身则是以StateObject的形式存放在SlotTable中；StateObject中含有StateRecord，它是一个Record链表，记录了这个StateObject在不同快照时刻的值。**
+**2. 而状态本身则是以StateObject的形式存放在SlotTable中；StateObject中含有StateRecord，它是一个Record链表，记录了这个StateObject在不同快照时刻的值。** 
 
 > `借用一句很精辟的概括：与其说是`**快照隔离了状态**`，不如说是`**状态关联了快照**。（[原文传送门](https://juejin.cn/post/7095544677515919367#heading-4)）
 
@@ -282,16 +283,33 @@ Snapshot系统中，我们把对状态的版本控制称为Snapshot，即快照�
 
 ![image.png](https://p9-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/4364306a1d7e4c65aa9c12bbf37eddcc~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=1428&h=576&s=58434&e=png&b=fefefe)
 
-### 2.3 目前可以获得的情报
+### 2.3 小结
 
 小结一下，这一节我们几乎没有看代码，单纯对快照系统的设计和功能进行了详尽的分析。下一节我们将会深入源码，而如果你理解了这一节的所有概念，理解源码就会轻松不少。
 
 此外，这一节中还有少量的使用场景和存在意义相关的内容，我们说往后稍稍、暂且不论的，我们将在第4节中再次提及它们，因为这一节如果展开介绍就太长太长了，它们的使用场景和存在意义我们将从Compose框架中窥见一番。
 
+> `注意：后文出现的“可变快照”这个词，可能仅指可变快照本身，也可能泛指可变快照，包括嵌套的可变快照、非嵌套的可变快照和全局快照等。请在确保理解了全局快照、可变快照、嵌套快照的概念后，根据上下文语境自行区分。`
 
-## 3 深入源码
+## 3 Snapshot系统的实现
 
 这一节我们带着之前理解的概念，深入源码继续探索。
+
+> **在这一节的开头，我们先说个题外话：**
+> 源码中有很多的函数是以Locked结尾的，这都意味着，这些函数的调用必须处于sync块内，它们不是线程安全的，得加锁。
+>
+> 例如，对于以下代码：
+> ```kotlin
+> internal fun closeAndReleasePinning() {
+>     sync {
+>         closeLocked()
+>         releasePinnedSnapshotsForCloseLocked()
+>     }
+> }
+> ```
+> 代表close和release操作的函数是标记为Locked，它们就应该被包裹在sync内，而closeAndReleasePinning函数则并没有以Locked结尾，这意味着它的调用就不需要考虑多线程问题。
+>
+> 所以其实，Locked后缀其实是写给调用者看的，在调用者想调用的时候去提醒他是否要注意考虑多线程问题。这是一个良好的命名习惯。（`至于为什么叫Locked（被动形式），对于带Locked后缀的函数本身来说，它自己是被sync的，所以Locked表示被锁住。`）
 
 ### 3.1 数据结构
 
@@ -323,7 +341,7 @@ SnapshotIdSet是一个Set，这个Set专门用于记录“位”。它记录了�
 
 结合图和构造函数中传入的参数，我们再解释一下。
 
-这个结构就是对从第lowerBound位开始往后\[0,127]位提供快速访问的一个类。从lowerBound+0\~lowerBound+63位，存在lowerSet这个Long中（`一个Long是64位`），类似地，从lowerBound+64\~lowerBound+127位，存在upperSet这个Long中。这些位的值要么是0，要么是1。由于这样的存储方式，当我们访问（`get`）、清除（`clear`）和设置（`set`）第\[lowerBound, lowerBound+127]位时，是非常快速的，就是O(1)的复杂度。
+这个结构就是对从第lowerBound位开始往后\[0,127]位提供快速访问的一个类。从lowerBound+0\~lowerBound+63位，存在lowerSet这个Long中（`一个Long是64位`），类似地，从lowerBound+64\~lowerBound+127位，存在upperSet这个Long中。这些位的值要么是0，要么是1。由于这样的存储方式，当我们访问`get`、清除`clear`和设置`set`第\[lowerBound, lowerBound+127]位时，是非常快速的，就是O(1)的复杂度。
 
 而除此以外，对于低于lowerBound的位置，这个数据结构也提供了访问，只不过是以稀疏的方式，也就是构造函数中的belowBound数组。
 
@@ -412,14 +430,361 @@ set操作与clear操作相反，是把第bit位设置为1。
 
 好了，固定快照是什么东西我们放在后面再去讨论，现在，与上个小节一样，我们先来看看这个SnapshotDoubleIndexHeap的本身，是怎么实现这样快速访问最小值的，对此不感兴趣的也可以跳过了。
 
-呃，好吧，别看了，它没什么好说的，它就是一个**堆排序**，对此不熟悉的话，可以自己去搜搜堆排序的算法详解，我们在这里就不去花篇幅讲堆排序了。
+呃，好吧，别看了，它没什么好说的，它就是一个**堆排序**，对此不熟悉的话，可以自己去搜搜堆排序的算法详解，在这里就不去花篇幅讲堆排序了。
 
 只不过，它是在每次新增和删除int值后，都会对int堆进行调整，保证它的有序性，因此增和删最坏情况下会耗时O(logN)，而这样，访问时就可以直接访问已经处于有序状态的int堆了，因此访问最小值的开销就是访问一个数组元素的开销O(1)，没什么玄乎的。
 
 至于这个类的名字，老长老长了，叫DoubleIndexHeap，Heap的意思是堆，表示int值构成了一个堆，采用堆排序；而DoubleIndex的意思是，为了记录这些int值的位置，还需要再用另一组IntArray对这一组values的位置进行跟踪记录，具体的我们就不再分析了。
 
-总之这个类，或者说这个算法，就是一个堆排序的思想，最终实现了O(1)复杂度的最小int值访问。
+总之这个类，或者说这个算法，就是一个堆排序的思想，最终实现了O(1)复杂度的int堆的最小值访问。
 
 接下来我们回到主线，继续分析Snapshot系统。
 
-### 3.2 快照的id和状态的可见性
+### 3.2 状态的读取
+
+从2.1和2.2两节我们知道，快照代表版本控制，状态对象可以关联不同的快照版本，从而实现了不同快照时刻下，能观察到同一状态对象的不同状态值这一功能。
+
+这一节，我们来思考状态的访问有关内容。
+
+#### 3.2.1 状态
+
+先来看看StateObject和StateRecord类。
+
+**StateObject**
+
+```kotlin
+interface StateObject {
+    val firstStateRecord: StateRecord
+    fun prependStateRecord(value: StateRecord)
+    fun mergeRecords(
+        previous: StateRecord,
+        current: StateRecord,
+        applied: StateRecord
+    ): StateRecord? = null
+}
+```
+
+1. StateObject是一个接口，2.1节提到过，StateObject内含有StateRecord，就是指这个firstStateRecord属性。StateRecord是一个链表结构，这里设计成头部永远是最新值，即调用prependStateRecord后，刚刚添加的StateRecord就是firstStateRecord。
+2. 当合并时，会调用mergeRecords方法，其中三个参数分别代表：
+    - previous：用于产生applied的StateRecord（`由于applied即将并入current，所以这个previous也是间接产生current的StateRecord`）。
+    - current：此StateObject在父快照或者全局快照中的StateRecord。
+    - applied：这次要向上提交合并的StateRecord，即将并入current。
+
+**StateRecord**
+
+```kotlin
+abstract class StateRecord {
+    internal var snapshotId: Int = currentSnapshot().id
+    internal var next: StateRecord? = null
+    abstract fun assign(value: StateRecord)
+    abstract fun create(): StateRecord
+}
+```
+
+1. StateRecord内含一个Snapshot的id，用于和Snapshot关联。
+2. StateRecord有一个属性next，用于形成链表结构。
+3. assign函数用于把另一个stateRecord的值赋给当前对象，create用于从当前对象创建一个新的StateRecord。
+
+上面的属性和函数都比较简陋，我们看看StateRecord的实现类，有好几个，例如StateStateRecord、StateListStateRecord、StateMapStateRecord、ResultRecord等等，它们就分别对应我们熟悉的mutableStateOf、mutableStateListOf、mutableStateMapOf、derivedStateOf等函数。现在我们先不去看那些，先回来Snapshot系统的主线。
+
+#### 3.2.2 版本控制
+
+下面我们来看快照是如何具体进行对状态的版本控制的。
+
+##### 3.2.2.1 版本控制逻辑
+
+从前文已经知道，状态对象关联了快照的版本，那我们就可以利用这一点做文章。看下面这张图。
+
+![image.png](https://p9-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/ba3ca58021424b93b5fcba49ca2fe215~tplv-k3u1fbpfcp-jj-mark:0:0:0:0:q75.image#?w=905&h=227&s=19133&e=png&b=ffffff)
+
+试想，假设一开始我们处于快照版本1，创建了第一个StateRecord，值为ptq，然后，快照依次升级到版本2和3，在版本3创建了第二个StateRecord，值为ptq666，最后快照升级到版本4。
+
+现在我们要来访问StateObject：
+
+- 当我们处于快照1，我们能访问到的Record只有关联了id=1的Record，即ptq。
+- 当我们处于快照2，此时还是只有ptq一个Record，我们只能访问到ptq。
+- 当我们处于快照3，此时，我们有两个Record了，那我们访问得到的结果是？当然是关联了最新版本3的Record，即ptq666。有最新值肯定用最新值嘛。
+- 当我们处于快照4，与快照3一样，我们能访问到的最新的Record还是ptq666。
+
+现在你是否恍然大悟？总结一下，假设我们处于快照id=current时，那么我们获取StateObject的值，其实就是去获取StateRecord链表中，id不超过current的最大StateRecord记录的值。
+
+此外，每一个快照内部，维护了一个invalid的id集合，表示对当前快照无效的快照黑名单，可访问的StateRecord关联的快照id不应位于此黑名单中。
+
+因此，我们最终归纳一下访问StateObject的值的逻辑：**假设处于快照id=current，且它维护了一个对它无效快照集合invalid，这时我们获取StateObject的值，就是获取所有StateRecord中，id不超过current，且不在invalid集合中的最大id的StateRecord记录的值**。
+
+此外，如果新增一条StateRecord，但可变快照还未apply时，它也是无效的，即使StateRecord的id没有超过快照id。
+
+这里提一嘴，快照的id是按拍摄的先后顺序全局递增的，通过`nextSnapshotId`变量来分配这个全局id。全局指的是整个进程，也就是进程中所有线程所有快照共用同一套id递增体系，因此id更大的快照，也就一定意味着在时间上是后拍摄的。
+
+最后一点，刚刚提到了invalid的id集合，那么，什么样的快照id会被认为invalid？这一小节我们暂且按下不表。
+
+下面我们先来看看具体代码。
+
+`fun <T : StateRecord> T.readable(state: StateObject): T `
+
+我们可以通过调用readable方法来访问StateObject的值。比如读取通过mutableStateOf创造的SnapshotState对象时，就会调用到这个readable函数。
+
+这个readable函数就做了两件事：
+1. 触发之前2.2节第10条提及的Snapshot的readObserver监听。
+2. 调用内部的readable读取状态。
+
+<span data-id="3-2-2-1-a1" id="3-2-2-1-a1" ></span>
+
+那我们接着看看内部的readable函数。
+
+`private fun <T : StateRecord> readable(r: T, id: Int, invalid: SnapshotIdSet): T? `
+
+三个参数分别为：
+- `r`：StateRecord链表的起点（`链表是从新往旧链的`）。
+- `id`：当前快照id。按照上一节说的，我们要找的记录的id不能大于这个id。
+- `invalid`：无效id集合（`即黑名单`）。按照上一节说的，我们要找的记录的id不能位于invalid内。
+
+这个函数的内部实现就是按照我们在3.2.2.1中提到的原则去遍历找记录而已，因此实现没有什么可看的。
+
+**全局快照的版本控制逻辑**
+
+接下来，我们让全局快照也一起参与讨论。
+
+对于全局快照，它的版本控制逻辑尽管在大致逻辑上面说的一致，但需要额外注意一点：当某个可变快照还未apply时，在它之中产生的StateRecord也是无效的，不应对其它快照可见。
+
+对于这一点，我们单独使用一个全局的`openSnapshots`集合记录所有的处于活动期，即创建了但未被应用或废弃的可变快照。除了创建可读快照以外，从全局分配新的nextSnapshotId时，都会把新id加入到openSnapshots中，这是因为既然还能产生新的id，那肯定是open的。
+
+> `注意，对于一些全局的变量，例如nextSnapshotId、openSnapshots、applyObservers等，对其进行写操作时，都需要加sync锁。`
+
+##### 3.2.2.2 快照版本升级
+
+上一节提到，快照id是按拍摄的先后顺序全局递增的，id更大的快照，意味着在时间上是后拍摄的。但除此以外，还有一些操作会导致快照的版本升级。这里的版本升级指的是，快照还是同一个快照，只是单纯重新给了它一个更高的id值。
+
+当然，快照版本升级这一概念仅出现在可变快照中，因为只有可变快照是可变的。我们这一节讨论的快照都是可变快照（`包括可变、嵌套可变、全局等`）。
+
+升级时，快照被重新分配的id值是此时全局最大的最新id值，这也就表明了升级操作的意义，即提高权限，让当前这个快照能访问除当前id外的所有状态。
+
+升级后，之前的快照id被记录到previousId集合，而新的id被记录到全局的openSnapshots集合，且原id+1~新id之间的id全部记录到本快照的invalid。这样操作是因为还能进行升级操作也就意味着还未apply，因此，要加入invalid集合，排除掉这些新的id，直到apply后。
+
+previousId集合记录了这个快照对象自创建以来所有使用过的历史id，这些历史id就是由升级操作产生的，记录这些历史id是为了apply操作，这里我们先不展开。
+
+快照的版本升级用于此快照发生变化且需要提权时，具体有以下场景：
+- 拍摄嵌套快照时，先给嵌套快照分配一个全局新id，然后，再对自己升级，保证自己此时的id大于嵌套快照的id。
+- 合并快照时，如果有合并的新Record产生，则也会进行快照升级，保证所有的合并记录产生最新的id。
+- notifyObjectsInitialized函数实际上进行的操作就是版本升级。
+- 嵌套快照apply时，会让父快照版本升级。
+
+上面的四类场景我们后面还会详细解释，这里如果不理解的话不用着急。全局快照的版本升级我们在后面也会单独再去分析，这里只是先引出一下版本升级这个概念。
+
+### 3.3 状态的写入
+
+3.2节我们主要探讨了快照的id与状态的访问控制，其实也就是状态的“读”，那么这一节，我们来看看状态的“写”（`所以这节讨论的都是可变快照`）。
+
+#### 3.3.1 固定快照
+
+先看一个概念，固定快照。
+
+固定快照用于决定StateObject中的StateRecord是否可以复用。
+
+固定快照使用了一个全局变量`pinningTable`来记录，与openSnapshots等全局变量类似，对它写入也需要加sync锁。固定快照实际上是一堆整数id中的一个最小id，因此使用3.1.2节介绍的数据结构SnapshotDoubleIndexHeap来记录，该结构能直接以O(1)的速度返回一个int堆中最小的那个。
+
+在每个快照对象创建时，都会在全局的pinningTable中更新固定快照。当快照创建时，取快照自己的id和自己的invalid中的最小者加入全局的pinningTable中。这是向pinningTable中添加id的唯一途径。
+
+而从pinningTable中移除id的途径则比较乱，但总的来说，就是在快照dispose或abandon时会去移除id。还有，快照apply时，如果是Nested的，则会把自己创建时固定的快照id交给父快照，而如果是非Nested的，那么快照apply就意味着已经完成了所有操作，因此就会像dispose那样，移除被自己和自己的子快照固定的所有id。
+
+上面两段文字讲了pinningTable的add和remove操作，那pinningTable是如何起作用的呢？之前已经提及，pinningTable用于决定Record是否能重用，这个判断是在状态写入时进行的，所以具体的逻辑我们在下一节状态写入中介绍。
+
+#### 3.3.2 状态写入
+
+对于StateObject的状态写入，最精彩的部分莫过于record的复用机制。这里代码的调用关系比较复杂，有这么几个函数都是关于状态写入的：
+
+1. overwritable `internal`
+2. writable `public`
+3. writableRecord `internal`
+4. newWritableRecord `internal`
+5. newWritableRecordLocked `private`
+6. overwritableRecord `internal`
+7. newOverwritableRecordLocked `internal`
+8. usedLocked `private`
+9. overwriteUnusedRecordsLocked `private`
+
+让我们来捋一捋这些函数。`由于名字太绕，后面以数字标号代替函数名。`
+
+##### 3.3.1.1 写入的入口
+
+我们从入口开始看。外界例如SnapshotState在写入值时会调用`①`overwritable，而例如SnapshotStateList或SnapshotStateMap在写入值时会调用`②`writable，因此前两个函数就是写入发生的入口函数了。`此外，DerivedState写入的入口直接是④，后续我们会在第4节单独分析DerivedState，现在它不是重点。`
+
+而`①`overwritable和`②`writable的区别就是，overwritable的使用场景是当需要完全覆盖掉原record时，而writable的使用场景允许只对record部分写入，因此正好适合于List、Map等集合对象。
+
+注意，这里的overwritable表示取到的这条record是“应该要被完全覆写的”，而非意味着“可以完全覆写、也可以只修改一部分”。再说白一点，overwritable意味着：如果写入时不完全重新覆写整个对象，就可能会导致字段不一致的问题，因为，通过overwritable取到的记录要么是已经废弃、不会再被访问的，要么就是新创建的，这意味着，如果只修改取到的record的部分字段，那么其中剩下的字段就很可能是错误的值。而，writable则意味着：允许调用者只修改其中的部分字段，只修改部分字段也是安全的，不会导致问题。这一点我们在本小节的末尾会进一步说明。([传送](#3-3-2-a1))
+
+函数`①`的签名如下：
+
+`fun <T : StateRecord, R> T.overwritable(state: StateObject, candidate: T, block: T.() -> R): R`
+
+这里传入的candidate参数意为，如果当前快照id等于candidate的id，则直接使用candidate进行覆写，否则，会从state的第一条record开始寻找可以进行覆写的record，具体可以看下面`⑥`的代码。`另外，candidate在目前的源码中都是指当前快照对stateObject调用readable获取到的record。`
+
+好，入口函数已经分析完，我们往下看。`①`和`②`会分别调用`⑥`overwritableRecord和`③`writableRecord，此外提一嘴，snapshot的writeObserver监听就是在`①`和`②`中触发的。
+
+先来看`③`writableRecord。这个函数负责取到一条可写入的record，逻辑如下。先去3.2.2.1节末尾[传送](#3-2-2-1-a1)提到的readable函数中，尝试读取一条记录。如果读取到的记录的id就是写入时的快照id，说明这个record是在这个快照中创建的，那它当然也同样是可写的，因此直接返回它。否则调用`④`newWritableRecord去获取一条可写的record，代码如下。
+
+```kotlin
+//③
+internal fun <T : StateRecord> T.writableRecord(state: StateObject, snapshot: Snapshot): T {
+    val readData = readable(this, snapshot.id, snapshot.invalid) ?: readError()
+    if (readData.snapshotId == snapshot.id) return readData
+    return readData.newWritableRecord(state, snapshot) //调用④，之后会一路调用到⑦
+}
+```
+
+好，我们继续看看`④`newWritableRecord。`④`很简单，它就是给`⑤`newWritableRecordLocked套了一个sync块，直接调用`⑤`。在`⑤`中，直接调用`⑦`得到一条record，然后直接对它进行写入。
+
+接下来，我们先不跟进`⑦`，我们回过头去看看`⑥`。之前提到，`①`会调用到`⑥`，这之后`⑥`其实也会调用到`⑦`，殊途同归了。让我们看看`⑥`的代码。
+
+```kotlin
+//⑥
+internal fun <T : StateRecord> T.overwritableRecord( 
+    state: StateObject,
+    snapshot: Snapshot,
+    candidate: T
+): T {
+    if (candidate.snapshotId == snapshot.id) return candidate
+    val newData = sync { newOverwritableRecordLocked(state) } //调用⑦
+    newData.snapshotId = snapshot.id
+    return newData
+}
+```
+
+可以发现，`⑥`的代码与`③`非常类似。好，现在不论是writable还是overwritable，当需要获取一条可写的新record时，都调用到了`⑦`，那么接下来来看看`⑦`的代码。
+
+##### 3.3.1.2 获取可用的record
+
+```kotlin
+//⑦
+internal fun <T : StateRecord> T.newOverwritableRecordLocked(state: StateObject): T {
+    return (usedLocked(state) as T?)?.apply {
+        snapshotId = Int.MAX_VALUE
+    } ?: create().apply {
+        snapshotId = Int.MAX_VALUE
+        this.next = state.firstStateRecord
+        state.prependStateRecord(this as T)
+    } as T
+}
+```
+
+`⑦`的主干逻辑是，在stateObject中找一条已使用过的废弃record，如果找不到则调用create创建一条。此外，关于这里把id设为Int.MAX的目的，如果有两个线程从不同的路径调用到`⑦`，这种情况下，即使外面的调用路径加了锁也可能导致这两个线程的两路调用取到的是同一个record，除非在`⑦`函数内部再加一个锁。这里采用取巧的方式，把snapshotId设置为Int.MAX，按照我们获取snapshot的原则，当id为Int.MAX时，它永远不可能被取到，因此，在调用usedLocked或create得到一个record后，把id设为Int.MAX，可以保证它永远只会被取用一次，这样就可以在`⑦`内部少加一个锁。
+
+现在，显然，`⑦`的内部最重要的就是函数`⑧`了，这个usedLocked就是我们的record复用机制的最终站了。上代码！
+
+```kotlin
+//⑧
+private fun usedLocked(state: StateObject): StateRecord? {
+    var current: StateRecord? = state.firstStateRecord
+    var validRecord: StateRecord? = null
+    val reuseLimit = pinningTable.lowestOrDefault(nextSnapshotId) - 1
+    val invalid = SnapshotIdSet.EMPTY
+    while (current != null) {
+        val currentId = current.snapshotId
+        if (currentId == INVALID_SNAPSHOT) {
+            return current
+        }
+        if (valid(current, reuseLimit, invalid)) {
+            if (validRecord == null) {
+                validRecord = current
+            } else {
+                return if (current.snapshotId < validRecord.snapshotId) current else validRecord
+            }
+        }
+        current = current.next
+    }
+    return null
+}
+```
+
+在usedLocked中，从stateObject的第一条record开始寻找废弃的可重用的record。那么，什么样的record是废弃的、可重用的呢？
+
+**情形一**：当record的id为INVALID_SNAPSHOT，就是废弃的、可重用的，其中INVALID_SNAPSHOT是一个常量，值为0。
+- 在snapshot调用abandon时，所有被记录修改的stateObject的所有关联了这个snapshot（包括它的当前id和previousIds）的record，都会被标记为INVALID_SNAPSHOT。
+- 通过调用函数`⑨`，以下情况会把record标记为INVALID_SNAPSHOT：
+    - 非嵌套的可变快照apply时，所有的它自己的发生修改的stateObject和对全局修改的stateObject，都相当于是历史状态了，这些历史状态中的无效record会通过函数`⑨`被标记为INVALID_SNAPSHOT。
+    - 全局快照升级时，历史的修改的record也会通过函数`⑨`被标记为INVALID_SNAPSHOT。
+
+**情形二**：利用3.3.1节提到的固定快照机制。固定快照就是全局所有处于活动状态的快照中id最小的那一个。那么，如果说，存在一条record，它的id比固定快照的id还要小，那所有活动的快照就都将可以访问到它。那么重点来了，如果说，像这样id比固定快照还要小的record有两条呢？是不是来感觉了！！如果是这样的话，就说明，任何快照在访问这两条记录时，都一定会访问到这两条record中id更大的那一条。进而，我们得到结论，这样的两条record中，id更小的将永远不会被任何快照访问到。因此，如果存在这样的两条记录，我们就取其中id更小的作为不会再被访问到的废弃record返回。
+
+如果不是上面的两种情况，则此函数取不到已废弃、可复用的record，需要create新的record。
+
+如果你彻底理解了这两种情形，那么，record的写入和复用机制到这里就完全结束了，这时候再去看函数`⑧`的源码，将会非常好理解。
+
+而对于函数`⑨`，刚刚说过，我们可以把stateObject中的过时的record标记为INVALID_SNAPSHOT。函数`⑨`内部寻找过时的record的逻辑与函数`⑧`的情形二完全一致，这里就不再去贴代码分析了。
+
+<span data-id="3-3-2-a1" id="3-3-2-a1" ></span>
+
+这小节的最后，我们再补充一个问题。
+
+之前我们提及，overwritable和writable的区别是：调用overwritable就表示调用者必须对取到的record完全覆写，只修改其中一部分字段是不安全的；调用writable则意味着允许调用者只对取到的record进行部分字段修改。这是如何实现的呢？答案就在函数`⑤`newWritableRecordLocked的代码中。
+
+```kotlin
+//⑤
+private fun <T : StateRecord> T.newWritableRecordLocked(state: StateObject, snapshot: Snapshot): T {
+    val newData = newOverwritableRecordLocked(state)
+    newData.assign(this)
+    newData.snapshotId = snapshot.id
+    return newData
+}
+```
+
+不论是overwritable还是writable，在不能直接取到当前快照的record时，都会调用函数`⑦`来获取一条废弃的或新的快照。之前讲过，调用overwritable意味着调用者会去完全覆写这条record，因此我们就不用再操心了。而调用writable则意味着调用者想进行部分写入，因此我们在`⑤`中先帮调用者用此时传入的record值把`⑦`取到的record完全覆盖掉，这样，writable实际上取到了一条已经用当前值把废弃/新创建的record覆盖了一遍的record，那么我们之后去部分修改取到的record值，就是安全的。
+
+##### 3.3.2.3 小结
+
+整个3.3.2小节——状态的写入，到这里完全结束了。这一节实在是精彩，以至于我想特意为它写一个小结。
+
+其实总结一下，整个状态写入机制的整体思想很常见，就是从stateObject的所有record中取一条当前快照能写入的，然后写入；而如果没取到，则去寻找所有record中的废弃record，然后写入；而如果没有废弃的，则新创建一条record添加到链表头部，然后写入。
+
+这种思想是很常见的，比如RecyclerView的缓存和复用机制，也是很多级然后不断去取，最后取不到则新建；又比如Glide的缓存复用机制，也是很多级去取，取不到则去请求新资源。
+
+但，尽管这个思想这么常见，我还是觉得这里很精彩，它其中很多思路是我没见过的，感觉很巧妙的设计思路。为了实现这样的“取废弃record”，为了判断“哪些record是废弃的”，同时还要保证高性能，Compose团队特意设计了pinningTable机制，又特意为pinningTable实现了一种数据结构算法，可谓是把优化做到了极致。
+
+好了，不再啰嗦了，这一小节就说这些了，我们继续往下走。
+
+#### 3.3.3 合并记录
+
+写INVALID_SNAPSHOT注释。
+
+### 3.4 快照的提交
+
+2
+
+#### 3.4.1 嵌套可变快照的提交
+
+3
+
+#### 3.4.2 可变快照的提交
+
+4
+
+### 3.5 小结一下
+
+5
+
+## 4 Compose与快照系统
+
+6
+
+### 4.1 重组与快照系统
+
+7
+
+### 4.2 状态与快照系统
+
+1
+
+#### 4.2.1 mutableStateOf
+
+2
+
+#### 4.2.2 mutableStateListOf
+
+3
+
+#### 4.2.3 derivedStateOf
+
+4
+
+## 5 小结
+
